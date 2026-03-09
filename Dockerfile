@@ -213,6 +213,16 @@ RUN --mount=type=cache,target=/root/.ccache \
 # Post-build: reinstall transformers from git main
 RUN uv pip install "transformers @ git+https://github.com/huggingface/transformers.git@main"
 
+# -- Hotfix: MTP hidden_states regression from PR #34552 ---------------------
+# PR #34552 changed `if self.method in ("deepseek_mtp", ...)` (dead code that
+# never matched) to `if self.method == "mtp"` (now matches all MTP models).
+# This causes chained-MTP models (Qwen3.5) to use cached target hidden states
+# instead of propagating model output through MTP layers → ~30% acceptance drop.
+# Fix: always use model output hidden_states for draft token sampling.
+# Upstream PR: https://github.com/vllm-project/vllm/pull/36531
+COPY patches/fix-mtp-hidden-states.py /tmp/fix-mtp-hidden-states.py
+RUN python /tmp/fix-mtp-hidden-states.py && rm /tmp/fix-mtp-hidden-states.py
+
 # Verify the build
 RUN python -c "import vllm; print(f'vLLM {vllm.__version__}')"
 
