@@ -1,0 +1,61 @@
+services:
+  vllm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CUDA_VERSION: "13.1.1"
+        MAX_JOBS: 128
+        NVCC_THREADS: 8
+        TORCH_CUDA_ARCH_LIST: "12.0a"
+        FLASHINFER_CUDA_ARCH_LIST: "12.0a"
+        VLLM_FLASH_ATTN_VERSION: "2"
+    image: llm-pytorch-blackwell:nightly
+    runtime: nvidia
+    ipc: host
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    ports:
+      - "8000:8000"
+    volumes:
+      # Shared across all containers — just downloaded model files
+      - hf-models:/root/.cache/huggingface
+
+      # Isolated per this stack — compiled JIT kernels (Triton, torch, vLLM)
+      - vllm-nightly-jit:/cache/jit
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - VLLM_FLASH_ATTN_VERSION=2
+      # Uncomment for multi-GPU
+      # - NCCL_P2P_LEVEL=NVL
+      # - CUDA_VISIBLE_DEVICES=0,1
+    # Pass your model and vLLM args here:
+    command:
+      - --model
+      - Qwen/Qwen3-8B
+      - --max-model-len
+      - "8192"
+      - --gpu-memory-utilization
+      - "0.90"
+      - --dtype
+      - auto
+      - --port
+      - "8000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  # Shared: model weights (safe to share between any containers)
+  hf-models:
+    name: hf-models
+
+  # Isolated: JIT-compiled kernels for THIS specific stack
+  # Never share between different PyTorch/CUDA/vLLM versions!
+  vllm-nightly-jit:
+    name: vllm-nightly-jit
